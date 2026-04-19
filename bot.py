@@ -153,13 +153,26 @@ def main():
         print("1. 市場データを取得中...")
         market_data = get_market_data()
         
-        print("2. AIによる分析を生成中...")
-        analysis_report = generate_analysis(market_data)
+        if event_name == "workflow_dispatch":
+            print("💡 手動実行：朝・夕・夜の3パターンを生成します。")
+            # 7時(朝)、17時(夕)、21時(夜)の順で送信
+            for h in [7, 17, 21]:
+                print(f"2-{h}. AI分析生成中 ({h}:00想定)...")
+                analysis_report = generate_analysis(market_data, force_mode=h)
+                
+                final_message = f"=== Market Briefing ===\n設定時刻: {h}:00想定\n\n{analysis_report}"
+                send_telegram_message(final_message)
+                
+                print(f"3-{h}. Telegramへ送信完了")
+                time.sleep(3) # 連続送信エラー防止
+        else:
+            # 通常の自動実行
+            print("2. AIによる分析を生成中...")
+            analysis_report = generate_analysis(market_data)
 
-        print("3. Telegramへ送信中...")
-        # 箇条書きなどの装飾（*）を消したシンプルな形式にする
-        final_message = f"=== Market Briefing ===\n日時: {now}\n\n{analysis_report}"
-        send_telegram_message(final_message)
+            print("3. Telegramへ送信中...")
+            final_message = f"=== Market Briefing ===\n日時: {now_str}\n\n{analysis_report}"
+            send_telegram_message(final_message)
 
     except Exception as e:
         print(f"❌ エラー発生: {e}")
