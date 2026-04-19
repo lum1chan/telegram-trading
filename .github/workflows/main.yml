@@ -2,11 +2,11 @@ name: Market Briefing Bot
 
 on:
   schedule:
-    # JST(日本時間)での実行スケジュール
-    # JST 07:00 (AM 7:00) -> UTC 22:00 (前日)
-    # JST 18:00 (PM 6:00) -> UTC 09:00
-    # JST 21:00 (PM 9:00) -> UTC 12:00
-    - cron: '0 22,9,12 * * *'
+    # 日本時間 7:30 (月-金) -> UTC 22:30 (日-木)
+    - cron: '30 22 * * 0-4'
+    
+    # 日本時間 20:00 (月-金) -> UTC 11:00 (月-金)
+    - cron: '0 11 * * 1-5'
   workflow_dispatch: # GitHubの画面上から手動で実行できるようにする設定
 
 # Node.js 20の警告を消すための設定
