@@ -63,8 +63,12 @@ def get_market_data():
 def generate_analysis(market_data_str):
     genai.configure(api_key=GEMINI_API_KEY)
     
-    # ===== ここを gemini-3.1-pro に変更 =====
-    model = genai.GenerativeModel('gemini-1.5-flash')
+  
+ model = genai.GenerativeModel('gemini-1.5-flash')
+
+response = model.generate_content(prompt)
+    return response.text
+
     # ========================================
     
     prompt = f"""
