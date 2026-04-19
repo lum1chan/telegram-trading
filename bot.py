@@ -59,21 +59,19 @@ def get_market_data():
 def generate_analysis(market_data_str):
     genai.configure(api_key=GEMINI_API_KEY)
     
-    # --- デバッグ用：使用可能モデルのリストをログに出力 ---
     print("--- 利用可能なモデルリストを確認中 ---")
     try:
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 print(f"利用可能モデル: {m.name}")
     except Exception as e:
-        print(f"モデルリストの取得に失敗しました（APIキーの問題の可能性があります）: {e}")
+        print(f"モデルリストの取得に失敗しました: {e}")
     print("---------------------------------------")
 
-    # モデルの指定（フルパス）
     model = genai.GenerativeModel('models/gemini-1.5-flash')
     
     prompt = f"""
-あなたはプロの機関投資家であり、デイトレーダーに朝のブリーフィングを提供するチーフアナリストです。
+あなたはプロのチーフアナリストです。
 以下の最新のグローバル市場データを基に、論理的で簡潔かつ、次のアクションに繋がるレポートを作成してください。
 
 【最新市場データ】
@@ -81,9 +79,7 @@ def generate_analysis(market_data_str):
 
 【レポートの構成と優先順位（厳守）】
 1. 【最優先】US100 & XAU/USD 戦略
-   - テクニカルとファンダを組み合わせて深く分析。今日の想定レンジや目線を提示。
 2. 【重要】海外市場から見た日本株・動意セクター予測
-   - SOX指数や米国セクター騰落（XLK, XLF, XLE）に基づき、日本市場の波及を予測。
 3. 為替（USD/JPY）概況
 
 【トーン＆マナー】
@@ -93,4 +89,39 @@ def generate_analysis(market_data_str):
     return response.text
 
 def send_telegram_message(text):
-    url = f"
+    # ↓ここが1行になっていることを確認してください
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    response = requests.post(url, json=payload)
+    if response.status_code != 200:
+        print(f"【エラー】Telegram送信失敗: {response.text}")
+        raise Exception("Telegram API error")
+
+def main():
+    jst = pytz.timezone('Asia/Tokyo')
+    now = datetime.now(jst).strftime("%Y/%m/%d %H:%M JST")
+    print(f"[{now}] 処理を開始します...")
+
+    try:
+        print("1. 市場データを取得中...")
+        market_data = get_market_data()
+        
+        print("2. AIによる分析を生成中...")
+        analysis_report = generate_analysis(market_data)
+
+        print("3. Telegramへ送信中...")
+        final_message = f"📊 *Market Briefing - {now}*\n\n{analysis_report}"
+        send_telegram_message(final_message)
+        print("すべての処理が正常に完了しました！")
+
+    except Exception as e:
+        print(f"❌ エラー発生: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
