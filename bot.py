@@ -61,7 +61,7 @@ def generate_analysis(market_data_str):
     genai.configure(api_key=GEMINI_API_KEY)
     
     # モデルの指定（無料枠で最も安定するflashモデル）
-    model = genai.GenerativeModel('models/gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
 あなたはプロの機関投資家であり、デイトレーダーに朝のブリーフィングを提供するチーフアナリストです。
