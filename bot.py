@@ -59,6 +59,9 @@ def get_market_data():
 def generate_analysis(market_data_str):
     # API設定
     genai.configure(api_key=GEMINI_API_KEY)
+    print("--- 利用可能なモデルリスト ---")
+for m in genai.list_models():
+    print(m.name)
     
     # モデルの指定（無料枠で最も安定するflashモデル）
     model = genai.GenerativeModel('gemini-1.5-flash')
