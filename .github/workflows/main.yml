@@ -5,16 +5,21 @@ on:
     - cron: '0 22,9,12 * * *'
   workflow_dispatch:
 
+# --- 追加：Node.jsの警告を消すための設定 ---
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+# ------------------------------------------
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4  # v3 から v4 に変更
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5  # v4 から v5 に変更
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
