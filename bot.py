@@ -64,7 +64,7 @@ def generate_analysis(market_data_str):
     genai.configure(api_key=GEMINI_API_KEY)
     
     # ===== ここを gemini-3.1-pro に変更 =====
-    model = genai.GenerativeModel('gemini-3.1-pro')
+    model = genai.GenerativeModel('gemini-1.5-pro')
     # ========================================
     
     prompt = f"""
