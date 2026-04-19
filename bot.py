@@ -4,11 +4,18 @@ import requests
 import google.generativeai as genai
 from datetime import datetime
 import pytz
+import sys # 追加
 
 # 環境変数の読み込み
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# --- 追加：環境変数のチェック ---
+if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not GEMINI_API_KEY:
+    print("【エラー】環境変数（Secrets）が正しく読み込めませんでした。GitHubの設定を確認してください。")
+    sys.exit(1)
+# ------------------------------
 
 # 取得するティッカーシンボル（指数、コモディティ、為替、個別株、ETF）
 TICKERS = {
