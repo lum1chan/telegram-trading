@@ -1,6 +1,7 @@
 import os
 import sys
 import traceback
+import time
 import yfinance as yf
 import requests
 import google.generativeai as genai
