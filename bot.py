@@ -149,6 +149,8 @@ def main():
     now = datetime.now(jst).strftime("%Y/%m/%d %H:%M JST")
     print(f"[{now}] 処理を開始します...")
 
+    event_name = os.getenv("GITHUB_EVENT_NAME")
+
     try:
         print("1. 市場データを取得中...")
         market_data = get_market_data()
