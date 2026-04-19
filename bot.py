@@ -62,7 +62,11 @@ def get_market_data():
 
 def generate_analysis(market_data_str):
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    
+    # ===== ここを gemini-3.1-pro に変更 =====
+    model = genai.GenerativeModel('gemini-3.1-pro')
+    # ========================================
+    
     prompt = f"""
 あなたはプロの機関投資家であり、デイトレーダーに朝のブリーフィングを提供するチーフアナリストです。
 以下の最新のグローバル市場データを基に、論理的で簡潔かつ、次のアクション（具体的なトレード戦略）に繋がるレポートを作成してください。
