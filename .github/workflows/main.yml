@@ -2,12 +2,8 @@ name: Market Briefing Bot
 
 on:
   schedule:
-    # JST(UTC+9)での指定時間に実行
-    # JST 07:00 (AM 7:00) -> UTC 22:00 (前日)
-    # JST 18:00 (PM 6:00) -> UTC 09:00
-    # JST 21:00 (PM 9:00) -> UTC 12:00
     - cron: '0 22,9,12 * * *'
-  workflow_dispatch: # GitHubの画面上から手動で実行できるようにする設定
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -15,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # v3 から v4 に変更
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5  # v4 から v5 に変更
         with:
           python-version: '3.10'
 
