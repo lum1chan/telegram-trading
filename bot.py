@@ -92,12 +92,11 @@ def generate_analysis(market_data_str):
     return response.text
 
 def send_telegram_message(text):
-    # ↓ここが1行になっていることを確認してください
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
-        "parse_mode": "Markdown"
+        # "parse_mode": "Markdown"  <-- この行を削除、またはコメントアウト
     }
     response = requests.post(url, json=payload)
     if response.status_code != 200:
@@ -117,9 +116,9 @@ def main():
         analysis_report = generate_analysis(market_data)
 
         print("3. Telegramへ送信中...")
-        final_message = f"📊 *Market Briefing - {now}*\n\n{analysis_report}"
+        # 箇条書きなどの装飾（*）を消したシンプルな形式にする
+        final_message = f"=== Market Briefing ===\n日時: {now}\n\n{analysis_report}"
         send_telegram_message(final_message)
-        print("すべての処理が正常に完了しました！")
 
     except Exception as e:
         print(f"❌ エラー発生: {e}")
