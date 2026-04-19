@@ -16,10 +16,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not GEMINI_API_KEY:
     print("【エラー】環境変数が設定されていません！")
-    print(f"TELEGRAM_BOT_TOKEN: {'設定あり' if TELEGRAM_BOT_TOKEN else '設定なし（カラ）'}")
-    print(f"TELEGRAM_CHAT_ID: {'設定あり' if TELEGRAM_CHAT_ID else '設定なし（カラ）'}")
-    print(f"GEMINI_API_KEY: {'設定あり' if GEMINI_API_KEY else '設定なし（カラ）'}")
-    print("GitHubの Settings > Secrets and variables > Actions で正しく登録されているか確認してください。")
     sys.exit(1)
 
 # ==========================================
@@ -42,7 +38,7 @@ TICKERS = {
 }
 
 def get_market_data():
-    data_lines =[]
+    data_lines = []
     for name, symbol in TICKERS.items():
         try:
             ticker = yf.Ticker(symbol)
@@ -51,7 +47,7 @@ def get_market_data():
                 latest_close = hist['Close'].iloc[-1]
                 prev_close = hist['Close'].iloc[-2]
                 pct_change = ((latest_close - prev_close) / prev_close) * 100
-                if symbol in["^TNX", "^VIX"]:
+                if symbol in ["^TNX", "^VIX"]:
                     data_lines.append(f"- {name}: {latest_close:.2f} (前日比 {latest_close - prev_close:+.2f} bp/pt)")
                 else:
                     data_lines.append(f"- {name}: {latest_close:.2f} (前日比 {pct_change:+.2f}%)")
@@ -60,10 +56,11 @@ def get_market_data():
             continue
     return "\n".join(data_lines)
 
-     def generate_analysis(market_data_str):
+def generate_analysis(market_data_str):
+    # API設定
     genai.configure(api_key=GEMINI_API_KEY)
     
-    # ↓ この行の先頭に余計なスペースや全角スペースがないか確認！
+    # モデルの指定（無料枠で最も安定するflashモデル）
     model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
@@ -89,7 +86,7 @@ def get_market_data():
 【トーン＆マナー】
 - 無駄な挨拶は省き、結論から述べること。
 - 「〜と思われます」ではなく「〜を想定」「〜に注目」と言い切るプロのトーン。
-- スマホ（Telegram）で読みやすいように、適度に改行し、箇条書きを活用すること。文字数は1500字〜2000字程度に収めること。
+- スマホ（Telegram）で読みやすいように、適度に改行し、箇条書きを活用すること。
 """
     response = model.generate_content(prompt)
     return response.text
@@ -103,12 +100,11 @@ def send_telegram_message(text):
     }
     response = requests.post(url, json=payload)
     if response.status_code != 200:
-        print(f"【エラー】Telegram送信失敗: HTTPステータス {response.status_code}")
-        print(f"エラー詳細: {response.text}")
+        print(f"【エラー】Telegram送信失敗: {response.text}")
         raise Exception("Telegram API error")
 
 # ==========================================
-# 3. メイン処理（エラーをキャッチする仕組み）
+# 3. メイン処理
 # ==========================================
 def main():
     jst = pytz.timezone('Asia/Tokyo')
@@ -118,11 +114,9 @@ def main():
     try:
         print("1. 市場データを取得中...")
         market_data = get_market_data()
-        print("市場データの取得完了:\n", market_data)
-
-        print("2. AIによる分析を生成中... (数秒〜数十秒かかります)")
+        
+        print("2. AIによる分析を生成中...")
         analysis_report = generate_analysis(market_data)
-        print("AI分析の生成完了！")
 
         print("3. Telegramへ送信中...")
         final_message = f"📊 *Market Briefing - {now}*\n\n{analysis_report}"
@@ -130,11 +124,7 @@ def main():
         print("すべての処理が正常に完了しました！")
 
     except Exception as e:
-        print("\n=============================================")
-        print("❌ 致命的なエラーが発生し、処理が停止しました。")
-        print("=============================================")
-        print(f"エラーメッセージ: {e}")
-        print("\n【詳細なエラーログ】")
+        print(f"❌ エラー発生: {e}")
         traceback.print_exc()
         sys.exit(1)
 
