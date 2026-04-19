@@ -57,14 +57,15 @@ def get_market_data():
             continue
     return "\n".join(data_lines)
 
-def generate_analysis(market_data_str):
+def generate_analysis(market_data_str, force_mode=None): # ← force_modeを追加
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('models/gemini-2.5-flash')
     
-    # 日本時間と日付を取得
     jst = pytz.timezone('Asia/Tokyo')
     now = datetime.now(jst)
-    now_hour = now.hour
+    
+    # 手動実行で時間が指定された場合はそれを使う。なければ現在時刻。
+    hour = force_mode if force_mode is not None else now.hour
     today_str = now.strftime("%Y年%m月%d日(%a)")
 
     # --- 共通の経済指標・カレンダー指示 ---
