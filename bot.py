@@ -59,44 +59,69 @@ def get_market_data():
 
 def generate_analysis(market_data_str):
     genai.configure(api_key=GEMINI_API_KEY)
-    
-    print("--- 利用可能なモデルリストを確認中 ---")
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                print(f"利用可能モデル: {m.name}")
-    except Exception as e:
-        print(f"モデルリストの取得に失敗しました: {e}")
-    print("---------------------------------------")
-
     model = genai.GenerativeModel('models/gemini-2.5-flash')
     
-    prompt = f"""
-あなたはプロの投資戦略家です。
-以下の最新のグローバル市場データを基に、論理的で簡潔かつ、次のアクションに繋がるレポートを作成してください。
+    # 日本時間と日付を取得
+    jst = pytz.timezone('Asia/Tokyo')
+    now = datetime.now(jst)
+    now_hour = now.hour
+    today_str = now.strftime("%Y年%m月%d日(%a)")
+
+    # --- 共通の経済指標・カレンダー指示 ---
+    calendar_instruction = f"""
+【最優先指示：経済指標・イベントチェック】
+- 本日（{today_str}）および直近24時間以内に発表される重要経済指標（例：米CPI、雇用統計、FOMC、日銀会合、ECB理事会等）を特定してください。
+- 該当がある場合、レポートの冒頭に「⚠️重要指標アラート」として、日本時間での発表時刻と市場への想定インパクトを記載してください。
+"""
+
+    # --- ① 朝モード (AM 5:00 - AM 9:59) ---
+    if 5 <= now_hour < 10:
+        mode_title = f"🌅 【朝：日本株寄り付き戦略】{today_str}"
+        prompt_content = f"""
+昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。
+- 米国セクターETF(XLK/XLF/XLE)の動きから、日本の「追い風(🔥)」「逆風(🧊)」セクターと具体銘柄（コード付）を推論。
+- 日米金利差とドル円の動向から、輸出株・内需株への影響を解説。
+"""
+
+    # --- ② 夕方モード (PM 15:00 - PM 18:59) ---
+    elif 15 <= now_hour < 19:
+        mode_title = f"🌆 【夕：日経総括 ＆ 欧州初動】{today_str}"
+        prompt_content = f"""
+日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください。
+- 今日の日本市場の総括（なぜ上がったか/下がったか）。
+- 欧州市場開始後のGold、US100、ドル円の初動(🔥/🧊)と、ロンドン勢が意識しそうな節目を推論。
+"""
+
+    # --- ③ 夜モード (PM 19:00 - AM 4:59) ---
+    else:
+        mode_title = f"🌃 【夜：NY開場直前・米株/ゴールド特化】{today_str}"
+        prompt_content = f"""
+NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分析です。日本株の情報は不要です。
+- 指標発表がある場合は、発表直後のボラティリティ予想と立ち回り（🔥/🧊）。
+- US10Y（金利）とVIXから、現在の市場の「攻め時・守り時」を判定してください。
+"""
+
+    # 最終的なプロンプトの組み立て
+    final_prompt = f"""
+あなたは日米の機関投資家から信頼されるトップストラテジストです。
+以下のデータとあなたの知識を組み合わせ、非常に具体的かつ実戦的なレポートを作成してください。
 
 【最新市場データ】
 {market_data_str}
 
-【分析の重要ルール】
-- 上昇・追い風と予想する銘柄には「🔥」、下落・逆風と予想する銘柄には「🧊」のマークを必ず名称の横に付けてください。
-- 上記のデータリストに載っていない銘柄でも、日本の代表的な銘柄（例：アドバンテスト(6857)、東京エレクトロン(8035)、三菱UFJ(8306)、トヨタ(7203)など）を君の知識から積極的に選び、具体的にコード付きで解説に含めること。
-- 米国のセクターETF（XLK/XLF/XLE）の騰落から、日本市場のどの業種に資金が流れるかを推論すること。
+{calendar_instruction}
 
-【レポートの構成と優先順位（厳守）】
-1. 【最優先】US100 & XAU/USD デイトレード戦略
-2. 【重要】米国市場の総括と日本への影響
-   - ナスダックやNVDAの動きから、日本の株式市場の推移を予測。
-3. 【追い風】セクター ＆ 具体銘柄
-   - 米国で好調だったセクターや指数の動きに基づき、今日日本市場で買われそうな「業種」と「具体的な銘柄（コード付き）」を君の知識から数個挙げてください。
-4. 【逆風】セクター ＆ 具体銘柄
-   - 金利上昇や米国指数の下落に基づき、今日売り込まれそうな「業種」と「具体的な銘柄（コード付き）」を挙げてください。
+【指示詳細】
+{prompt_content}
 
 【トーン＆マナー】
-- 結論から述べ、箇条書きを活用すること。
+- 特殊記号（*や_）は絶対に使わず、プレーンテキストと絵文字のみで出力。
+- 箇条書きを使い、結論から簡潔に。
+- プロらしい深い洞察を含めること。
 """
-    response = model.generate_content(prompt)
-    return response.text
+
+    response = model.generate_content(final_prompt)
+    return f"{mode_title}\n\n{response.text}"
 
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
