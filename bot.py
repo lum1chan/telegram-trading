@@ -68,7 +68,7 @@ def generate_analysis(market_data_str):
         print(f"モデルリストの取得に失敗しました: {e}")
     print("---------------------------------------")
 
-    model = genai.GenerativeModel('models/gemini-1.5-flash')
+    model = genai.GenerativeModel('models/gemini-2.5-flash')
     
     prompt = f"""
 あなたはプロのチーフアナリストです。
