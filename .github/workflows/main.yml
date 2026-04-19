@@ -2,13 +2,16 @@ name: Market Briefing Bot
 
 on:
   schedule:
-    # 日本時間 7:30 (月-金) -> UTC 22:30 (日-木)
-    - cron: '30 22 * * 0-4'
+    # ① 日本時間 AM 7:00 (平日) -> UTC 前日 22:00
+    - cron: '0 22 * * 0-4'
     
-    # 日本時間 20:00 (月-金) -> UTC 11:00 (月-金)
-    - cron: '0 11 * * 1-5'
-  workflow_dispatch: # GitHubの画面上から手動で実行できるようにする設定
-
+    # ② 日本時間 PM 6:00 (平日) -> UTC 当日 09:00
+    - cron: '0 9 * * 1-5'
+    
+    # ③ 日本時間 PM 9:00 (平日) -> UTC 当日 12:00
+    - cron: '0 12 * * 1-5'
+  
+  workflow_dispatch: # 手動実行ボタンも残しておく
 # Node.js 20の警告を消すための設定
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
