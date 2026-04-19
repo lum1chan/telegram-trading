@@ -60,16 +60,11 @@ def get_market_data():
             continue
     return "\n".join(data_lines)
 
-def generate_analysis(market_data_str):
+     def generate_analysis(market_data_str):
     genai.configure(api_key=GEMINI_API_KEY)
     
-  
- model = genai.GenerativeModel('gemini-1.5-flash')
-
-response = model.generate_content(prompt)
-    return response.text
-
-    # ========================================
+    # ↓ この行の先頭に余計なスペースや全角スペースがないか確認！
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
 あなたはプロの機関投資家であり、デイトレーダーに朝のブリーフィングを提供するチーフアナリストです。
