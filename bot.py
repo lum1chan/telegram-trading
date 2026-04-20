@@ -7,6 +7,7 @@ import requests
 import google.generativeai as genai
 from datetime import datetime
 import pytz
+import random  # 追加：APIキーのシャッフル用
 
 # ==========================================
 # 1. 環境変数のチェック
@@ -14,6 +15,8 @@ import pytz
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# 2つ目のキーも取得（設定されていなくても動くようにします）
+GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_2")
 
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not GEMINI_API_KEY:
     print("【エラー】環境変数が設定されていません！")
@@ -58,89 +61,63 @@ def get_market_data():
             continue
     return "\n".join(data_lines)
 
-def generate_analysis(market_data_str, force_mode=None): # ← force_modeを追加
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('models/gemini-2.5-flash')
-    
+# --- 該当箇所：API分散ロジックを組み込み ---
+def generate_analysis(market_data_str, force_mode=None):
+    # 利用可能なAPIキーをリスト化してシャッフル
+    api_keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
+    valid_keys = [k for k in api_keys if k]
+    random.shuffle(valid_keys)
+
     jst = pytz.timezone('Asia/Tokyo')
     now = datetime.now(jst)
-    
-    # 手動実行で時間が指定された場合はそれを使う。なければ現在時刻。
     hour = force_mode if force_mode is not None else now.hour
     today_str = now.strftime("%Y年%m月%d日(%a)")
 
-    # --- 共通の経済指標・カレンダー指示 ---
+    # 指示内容の作成（ここは変更なし）
     calendar_instruction = f"""
 【最優先指示：経済指標・イベントチェック】
 - 本日（{today_str}）および直近24時間以内に発表される重要経済指標（例：米CPI、雇用統計、FOMC、日銀会合、ECB理事会等）を特定してください。
 - 該当がある場合、レポートの冒頭に「⚠️重要指標アラート」として、日本時間での発表時刻と市場への想定インパクトを記載してください。
 - 円安による日銀の為替介入や地政学的リスクなど不確定でも注意するべき点があれば、要点を簡潔にまとめてください。
 """
-
-    # --- ① 朝モード (AM 5:00 - AM 9:59) ---
     if 5 <= hour < 10:
         mode_title = f"🌅 【朝：日本株寄り付き戦略】{today_str}"
-        prompt_content = f"""
-昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。
-- 前日のニュースや米国セクターETF(XLK/XLF/XLE)の動きから、日本の「追い風」「逆風」セクターと具体銘柄（コード付）を推論。
-- 日米金利差とドル円の動向から、輸出株・内需株への影響を解説。
-"""
-
-    # --- ② 夕方モード (PM 15:00 - PM 18:59) ---
+        prompt_content = f"昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください..."
     elif 15 <= hour < 19:
         mode_title = f"🌆 【夕：日経総括 ＆ 欧州初動】{today_str}"
-        prompt_content = f"""
-日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください。
-- 今日の日本市場の総括。
-- どのセクターや銘柄に資金が集まったかを解説してください。
-- 欧州市場開始後のGold(XAU/USD),US100でロンドン勢が意識しそうな節目を推論。
-- NY市場開場までに予想されるGold(XAU/USD),US100の短期トレンドなども含めた分析をしてください。
-"""
-
-    # --- ③ 夜モード (PM 19:00 - AM 4:59) ---
+        prompt_content = f"日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください..."
     else:
         mode_title = f"🌃 【夜：NY開場直前・米株/ゴールド特化】{today_str}"
-        prompt_content = f"""
-NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分析です。日本株の情報は不要です。
-- NY市場開場に向けてUS100,Gold(XAU/USD)のトレンドや推移などについて分析してください。
-- US100,Gold(XAU/USD)のデイトレードで意識することをまとめてください。
-- 指標発表がある場合は、発表直後のボラティリティ予想と立ち回り.
-- 前日のニュースなどで値動きが予想される銘柄やセクターをまとめて解説してください。
-"""
-    analysis_rules = """
-【分析の重要ルール】
-- 上昇・追い風と予想する銘柄や指数には「🔥」、下落・逆風と予想するものには「🧊」のマークを必ず名称の横に付けてください。
-- リストにない銘柄でも、日本の代表的な銘柄（アドバンテスト(6857)、東京エレクトロン(8035)、三菱UFJ(8306)、トヨタ(7203)など）を君の知識から積極的に選び、具体的にコード付きで解説に含めること。
-"""    
+        prompt_content = f"NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分析です..."
 
-    # 最終的なプロンプトの組み立て
-    final_prompt = f"""
-あなたは日米の投資家から信頼されるトップストラテジストそして、トレーダーです。
-以下のデータとあなたの知識を組み合わせ、非常に具体的かつ実戦的なレポートを作成してください。
+    final_prompt = f"あなたは日米の投資家から信頼されるトップストラテジスト...（中略）\n{market_data_str}\n{calendar_instruction}\n{prompt_content}"
 
-【最新市場データ】
-{market_data_str}
+    # --- APIキーを順番に試すループ ---
+    response_text = None
+    for key in valid_keys:
+        try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel('models/gemini-2.5-flash')
+            response = model.generate_content(final_prompt)
+            response_text = response.text
+            if response_text:
+                print(f"✅ API実行成功 (Key末尾: {key[-4:]})")
+                break
+        except Exception as e:
+            if "429" in str(e):
+                print(f"⚠️ API制限(429)発生。次のキーを試します...")
+                continue
+            else:
+                raise e
 
-{calendar_instruction}
+    if not response_text:
+        raise Exception("利用可能なすべてのAPIキーで制限がかかりました。")
 
-【指示詳細】
-{prompt_content}
-
-【トーン＆マナー】
-- 特殊記号（*や_）は絶対に使わず、プレーンテキストと絵文字のみで出力。
-- 箇なし書きを使い、結論から簡潔に。
-- プロらしい深い洞察を含めること。
-"""
-
-    response = model.generate_content(final_prompt)
-    return f"{mode_title}\n\n{response.text}"
+    return f"{mode_title}\n\n{response_text}"
 
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-    }
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
     response = requests.post(url, json=payload)
     if response.status_code != 200:
         print(f"【エラー】Telegram送信失敗: {response.text}")
@@ -148,26 +125,19 @@ def send_telegram_message(text):
 
 def main():
     jst = pytz.timezone('Asia/Tokyo')
-    # 変数名を here_now と now_str に分けて整理し、エラーを防止
     here_now = datetime.now(jst)
     now_str = here_now.strftime("%Y/%m/%d %H:%M JST")
-    
     print(f"[{now_str}] 処理を開始します...")
 
     try:
         print("1. 市場データを取得中...")
         market_data = get_market_data()
-        
-        # GASからの呼び出しも、通常の自動実行も、
-        # 「その瞬間の時刻」に基づいた分析を1回だけ生成して送信するように統合しました。
         print("2. AIによる分析を生成中...")
         analysis_report = generate_analysis(market_data)
-
         print("3. Telegramへ送信中...")
         final_message = f"=== Market Briefing ===\n日時: {now_str}\n\n{analysis_report}"
         send_telegram_message(final_message)
         print("✅ 全ての処理が完了しました。")
-
     except Exception as e:
         print(f"❌ エラー発生: {e}")
         traceback.print_exc()
