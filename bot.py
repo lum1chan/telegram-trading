@@ -94,7 +94,7 @@ def generate_analysis(market_data_str, force_mode=None):
             try:
                 genai.configure(api_key=key)
                 # 最も制限に強い安定版 1.5-flash を使用
-                model = genai.GenerativeModel('models/gemini-1.5-flash')
+                model = genai.GenerativeModel('gemini-1.5-flash')
                 response = model.generate_content(final_prompt)
                 response_text = response.text
                 if response_text:
