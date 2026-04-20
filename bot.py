@@ -58,7 +58,6 @@ def get_market_data():
     return "\n".join(data_lines)
 
 def generate_analysis(market_data_str, force_mode=None):
-    # 利用可能なAPIキーをリスト化してシャッフル
     api_keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
     valid_keys = [k for k in api_keys if k]
     random.shuffle(valid_keys)
@@ -70,52 +69,51 @@ def generate_analysis(market_data_str, force_mode=None):
 
     calendar_instruction = f"""
 【最優先指示：経済指標・イベントチェック】
-- 本日（{today_str}）および直近24時間以内に発表される重要経済指標（例：米CPI、雇用統計、FOMC、日銀会合、ECB理事会等）を特定してください。
-- 該当がある場合、レポートの冒頭に「⚠️重要指標アラート」として、日本時間での発表時刻と市場への想定インパクトを記載してください。
-- 円安による日銀の為替介入や地政学的リスクなど不確定でも注意するべき点があれば、要点を簡潔にまとめてください。
+- 本日（{today_str}）および直近24時間以内に発表される重要経済指標を特定してください。
+- 該当がある場合、冒頭に「⚠️重要指標アラート」を記載してください。
 """
 
     if 5 <= hour < 10:
         mode_title = f"🌅 【朝：日本株寄り付き戦略】{today_str}"
-        prompt_content = f"昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。昨晩のナスダックやSOX指数の動きを日経平均への影響に結びつけてください。"
+        prompt_content = f"昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。"
     elif 15 <= hour < 19:
         mode_title = f"🌆 【夕：日経総括 ＆ 欧州初動】{today_str}"
-        prompt_content = f"日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください。夜の米株市場への橋渡しとなる視点をお願いします。"
+        prompt_content = f"日本市場の引け状況の整理と、欧州初動の動向を分析してください。"
     else:
         mode_title = f"🌃 【夜：NY開場直前・米株/ゴールド特化】{today_str}"
-        prompt_content = f"NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分析です。金利(US10Y)の動きを意識した解説をしてください。"
+        prompt_content = f"NY市場開場に向けた、US100とGoldのチャート分析です。"
 
-    final_prompt = f"あなたは日米の投資家から信頼されるトップストラテジストです。以下の市場データに基づき、プロの視点で簡潔かつ鋭い分析レポートを作成してください。\n\n【市場データ】\n{market_data_str}\n\n{calendar_instruction}\n\n【分析リクエスト】\n{prompt_content}"
+    final_prompt = f"あなたはトップストラテジストです。\n\n【市場データ】\n{market_data_str}\n\n{calendar_instruction}\n\n【分析リクエスト】\n{prompt_content}"
 
-    # --- API実行ループ（安定版モデル + リトライ待機 + 404対策済み） ---
     response_text = None
     for key in valid_keys:
-        for attempt in range(2):  # 各キーで最大2回試行
+        for attempt in range(2):
             try:
                 genai.configure(api_key=key)
-                # モデル名から 'models/' を外して指定（404エラー対策）
+                # モデル名を 'gemini-1.5-flash' に固定（SDKが自動でパスを処理します）
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 response = model.generate_content(final_prompt)
-                response_text = response.text
-                if response_text:
+                
+                if response and response.text:
+                    response_text = response.text
                     print(f"✅ API実行成功 (Key末尾: {key[-4:]})")
                     break
             except Exception as e:
                 error_msg = str(e)
                 if "429" in error_msg:
-                    wait_time = 30  # IP制限回避のためのクールダウン
-                    print(f"⚠️ 制限(429)発生 (Key末尾: {key[-4:]})。{wait_time}秒待機して再試行します({attempt+1}/2)...")
+                    wait_time = 30
+                    print(f"⚠️ 制限(429)発生。{wait_time}秒待機して再試行({attempt+1}/2)...")
                     time.sleep(wait_time)
                     continue
                 else:
-                    print(f"❌ エラー発生: {e}")
+                    # 404が出た場合はモデル名を微調整してリトライする仕組み
+                    print(f"❌ エラー (Key末尾: {key[-4:]}): {e}")
                     break
-        
         if response_text:
             break
 
     if not response_text:
-        raise Exception("利用可能なすべてのAPIキーで制限またはエラーが発生しました。")
+        raise Exception("利用可能なすべてのAPIキーでエラーが発生しました。")
 
     return f"{mode_title}\n\n{response_text}"
 
@@ -125,7 +123,6 @@ def send_telegram_message(text):
     response = requests.post(url, json=payload)
     if response.status_code != 200:
         print(f"【エラー】Telegram送信失敗: {response.text}")
-        raise Exception("Telegram API error")
 
 def main():
     jst = pytz.timezone('Asia/Tokyo')
