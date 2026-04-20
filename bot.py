@@ -23,20 +23,17 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not GEMINI_API_KEY:
 # 2. 各種処理
 # ==========================================
 TICKERS = {
-    "US100": "^NDX",          # ナスダック100
-    "SOX": "^SOX",            # 半導体指数
-    "NVDA": "NVDA",           # エヌビディア
-    "Gold": "GC=F",           # 【追加】ゴールド（XAU/USD相当）
-    "US10Y": "^TNX",          # 米10年債利回り（金利）
-    "VIX": "^VIX",            # 恐怖指数
-    "USD/JPY": "JPY=X",       # ドル円
-    
-    # セクターETF（AIに日本のセクターを推論させるための材料）
-    "Tech(XLK)": "XLK",       # 米国ハイテク
-    "Financial(XLF)": "XLF",  # 米国金融
-    "Energy(XLE)": "XLE",     # 米国エネルギー
-    
-    "Nikkei225": "^N225"      # 日経平均
+    "US100": "^NDX",
+    "SOX": "^SOX",
+    "NVDA": "NVDA",
+    "Gold": "GC=F",
+    "US10Y": "^TNX",
+    "VIX": "^VIX",
+    "USD/JPY": "JPY=X",
+    "Tech(XLK)": "XLK",
+    "Financial(XLF)": "XLF",
+    "Energy(XLE)": "XLE",
+    "Nikkei225": "^N225"
 }
 
 def get_market_data():
@@ -58,78 +55,46 @@ def get_market_data():
             continue
     return "\n".join(data_lines)
 
-def generate_analysis(market_data_str, force_mode=None): # ← force_modeを追加
+def generate_analysis(market_data_str, force_mode=None):
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('models/gemini-2.5-flash')
+    model = genai.GenerativeModel('models/gemini-2.0-flash')
     
     jst = pytz.timezone('Asia/Tokyo')
     now = datetime.now(jst)
     
-    # 手動実行で時間が指定された場合はそれを使う。なければ現在時刻。
     hour = force_mode if force_mode is not None else now.hour
     today_str = now.strftime("%Y年%m月%d日(%a)")
 
-    # --- 共通の経済指標・カレンダー指示 ---
     calendar_instruction = f"""
 【最優先指示：経済指標・イベントチェック】
-- 本日（{today_str}）および直近24時間以内に発表される重要経済指標（例：米CPI、雇用統計、FOMC、日銀会合、ECB理事会等）を特定してください。
-- 該当がある場合、レポートの冒頭に「⚠️重要指標アラート」として、日本時間での発表時刻と市場への想定インパクトを記載してください。
-- 円安による日銀の為替介入や地政学的リスクなど不確定でも注意するべき点があれば、要点を簡潔にまとめてください。
+- 本日（{today_str}）および直近24時間以内に発表される重要経済指標を特定してください。
+- 該当がある場合、冒頭に「⚠️重要指標アラート」を記載してください。
 """
 
-    # --- ① 朝モード (AM 5:00 - AM 9:59) ---
     if 5 <= hour < 10:
         mode_title = f"🌅 【朝：日本株寄り付き戦略】{today_str}"
-        prompt_content = f"""
-昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。
-- 前日のニュースや米国セクターETF(XLK/XLF/XLE)の動きから、日本の「追い風」「逆風」セクターと具体銘柄（コード付）を推論。
-- 日米金利差とドル円の動向から、輸出株・内需株への影響を解説。
-"""
-
-    # --- ② 夕方モード (PM 15:00 - PM 18:59) ---
+        prompt_content = "昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。"
     elif 15 <= hour < 19:
         mode_title = f"🌆 【夕：日経総括 ＆ 欧州初動】{today_str}"
-        prompt_content = f"""
-日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください。
-- 今日の日本市場の総括。
-- どのセクターや銘柄に資金が集まったかを解説してください。
-- 欧州市場開始後のGold(XAU/USD),US100でロンドン勢が意識しそうな節目を推論。
-- NY市場開場までに予想されるGold(XAU/USD),US100の短期トレンドなども含めた分析をしてください。
-"""
-
-    # --- ③ 夜モード (PM 19:00 - AM 4:59) ---
+        prompt_content = "日本市場の引け整理と、ロンドン市場の動向、GoldやUS100の節目を推論してください。"
     else:
         mode_title = f"🌃 【夜：NY開場直前・米株/ゴールド特化】{today_str}"
-        prompt_content = f"""
-NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分析です。日本株の情報は不要です。
-- NY市場開場に向けてUS100,Gold(XAU/USD)のトレンドや推移などについて分析してください。
-- US100,Gold(XAU/USD)のデイトレードで意識することをまとめてください。
-- 指標発表がある場合は、発表直後のボラティリティ予想と立ち回り。
-- 前日のニュースなどで値動きが予想される銘柄やセクターをまとめて解説してください。
-"""
+        prompt_content = "NY市場開場に向けたUS100とGoldの短期分析をしてください。日本株の情報は不要です。"
+
     analysis_rules = """
-【分析の重要ルール】
-- 上昇・追い風と予想する銘柄や指数には「🔥」、下落・逆風と予想するものには「🧊」のマークを必ず名称の横に付けてください。
-- リストにない銘柄でも、日本の代表的な銘柄（アドバンテスト(6857)、東京エレクトロン(8035)、三菱UFJ(8306)、トヨタ(7203)など）を君の知識から積極的に選び、具体的にコード付きで解説に含めること。
+- 上昇・追い風には「🔥」、下落・逆風には「🧊」を付ける。
+- 代表的な日本銘柄(6857, 8035, 8306, 7203等)を具体的に含める。
 """    
 
-    # 最終的なプロンプトの組み立て
     final_prompt = f"""
-あなたは日米の投資家から信頼されるトップストラテジストそして、トレーダーです。
-以下のデータとあなたの知識を組み合わせ、非常に具体的かつ実戦的なレポートを作成してください。
-
+あなたは凄腕ストラテジストです。
 【最新市場データ】
 {market_data_str}
-
 {calendar_instruction}
-
 【指示詳細】
 {prompt_content}
-
-【トーン＆マナー】
-- 特殊記号（*や_）は絶対に使わず、プレーンテキストと絵文字のみで出力。
-- 箇条書きを使い、結論から簡潔に。
-- プロらしい深い洞察を含めること。
+{analysis_rules}
+- 特殊記号（*や_）は使わず、プレーンテキストと絵文字のみで出力してください。
 """
 
     response = model.generate_content(final_prompt)
@@ -137,20 +102,17 @@ NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分
 
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        # "parse_mode": "Markdown"  <-- この行を削除、またはコメントアウト
-    }
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
     response = requests.post(url, json=payload)
     if response.status_code != 200:
         print(f"【エラー】Telegram送信失敗: {response.text}")
-        raise Exception("Telegram API error")
 
 def main():
     jst = pytz.timezone('Asia/Tokyo')
-    now = datetime.now(jst).strftime("%Y/%m/%d %H:%M JST")
-    print(f"[{now}] 処理を開始します...")
+    now_dt = datetime.now(jst)
+    # ここで now_str を定義して、エラーを解消します
+    now_str = now_dt.strftime("%Y/%m/%d %H:%M JST")
+    print(f"[{now_str}] 処理を開始します...")
 
     event_name = os.getenv("GITHUB_EVENT_NAME")
 
@@ -159,23 +121,17 @@ def main():
         market_data = get_market_data()
         
         if event_name == "workflow_dispatch":
-            print("💡 手動実行：朝・夕・夜の3パターンを生成します。")
-            # 7時(朝)、17時(夕)、21時(夜)の順で送信
+            print("💡 手動実行：3パターン生成します。")
             for h in [7, 17, 21]:
-                print(f"2-{h}. AI分析生成中 ({h}:00想定)...")
                 analysis_report = generate_analysis(market_data, force_mode=h)
-                
                 final_message = f"=== Market Briefing ===\n設定時刻: {h}:00想定\n\n{analysis_report}"
                 send_telegram_message(final_message)
-                
-                print(f"3-{h}. Telegramへ送信完了")
-                time.sleep(3) # 連続送信エラー防止
+                time.sleep(3)
         else:
-            # 通常の自動実行
             print("2. AIによる分析を生成中...")
             analysis_report = generate_analysis(market_data)
-
             print("3. Telegramへ送信中...")
+            # 定義した now_str を使用
             final_message = f"=== Market Briefing ===\n日時: {now_str}\n\n{analysis_report}"
             send_telegram_message(final_message)
 
