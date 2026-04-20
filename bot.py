@@ -128,7 +128,7 @@ NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分
 
 【トーン＆マナー】
 - 特殊記号（*や_）は絶対に使わず、プレーンテキストと絵文字のみで出力。
-- 箇条書きを使い、結論から簡潔に。
+- 箇なし書きを使い、結論から簡潔に。
 - プロらしい深い洞察を含めること。
 """
 
@@ -154,31 +154,19 @@ def main():
     
     print(f"[{now_str}] 処理を開始します...")
 
-    event_name = os.getenv("GITHUB_EVENT_NAME")
-
     try:
         print("1. 市場データを取得中...")
         market_data = get_market_data()
         
-        if event_name == "workflow_dispatch":
-            print("💡 手動実行：朝・夕・夜の3パターンを生成します。")
-            for h in [7, 17, 21]:
-                print(f"2-{h}. AI分析生成中 ({h}:00想定)...")
-                analysis_report = generate_analysis(market_data, force_mode=h)
-                
-                final_message = f"=== Market Briefing ===\n設定時刻: {h}:00想定\n\n{analysis_report}"
-                send_telegram_message(final_message)
-                
-                print(f"3-{h}. Telegramへ送信完了")
-                time.sleep(3) 
-        else:
-            print("2. AIによる分析を生成中...")
-            analysis_report = generate_analysis(market_data)
+        # GASからの呼び出しも、通常の自動実行も、
+        # 「その瞬間の時刻」に基づいた分析を1回だけ生成して送信するように統合しました。
+        print("2. AIによる分析を生成中...")
+        analysis_report = generate_analysis(market_data)
 
-            print("3. Telegramへ送信中...")
-            # ここで now_str が正しく使われるようになります
-            final_message = f"=== Market Briefing ===\n日時: {now_str}\n\n{analysis_report}"
-            send_telegram_message(final_message)
+        print("3. Telegramへ送信中...")
+        final_message = f"=== Market Briefing ===\n日時: {now_str}\n\n{analysis_report}"
+        send_telegram_message(final_message)
+        print("✅ 全ての処理が完了しました。")
 
     except Exception as e:
         print(f"❌ エラー発生: {e}")
