@@ -7,7 +7,7 @@ import requests
 import google.generativeai as genai
 from datetime import datetime
 import pytz
-import random  # 追加：APIキーのシャッフル用
+import random
 
 # ==========================================
 # 1. 環境変数のチェック
@@ -15,7 +15,6 @@ import random  # 追加：APIキーのシャッフル用
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-# 2つ目のキーも取得（設定されていなくても動くようにします）
 GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_2")
 
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not GEMINI_API_KEY:
@@ -29,16 +28,13 @@ TICKERS = {
     "US100": "^NDX",          # ナスダック100
     "SOX": "^SOX",            # 半導体指数
     "NVDA": "NVDA",           # エヌビディア
-    "Gold": "GC=F",           # 【追加】ゴールド（XAU/USD相当）
-    "US10Y": "^TNX",          # 米10年債利回り（金利）
+    "Gold": "GC=F",           # ゴールド
+    "US10Y": "^TNX",          # 米10年債利回り
     "VIX": "^VIX",            # 恐怖指数
     "USD/JPY": "JPY=X",       # ドル円
-    
-    # セクターETF（AIに日本のセクターを推論させるための材料）
     "Tech(XLK)": "XLK",       # 米国ハイテク
     "Financial(XLF)": "XLF",  # 米国金融
     "Energy(XLE)": "XLE",     # 米国エネルギー
-    
     "Nikkei225": "^N225"      # 日経平均
 }
 
@@ -61,7 +57,6 @@ def get_market_data():
             continue
     return "\n".join(data_lines)
 
-# --- 該当箇所：API分散ロジックを組み込み ---
 def generate_analysis(market_data_str, force_mode=None):
     # 利用可能なAPIキーをリスト化してシャッフル
     api_keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
@@ -73,45 +68,54 @@ def generate_analysis(market_data_str, force_mode=None):
     hour = force_mode if force_mode is not None else now.hour
     today_str = now.strftime("%Y年%m月%d日(%a)")
 
-    # 指示内容の作成（ここは変更なし）
     calendar_instruction = f"""
 【最優先指示：経済指標・イベントチェック】
 - 本日（{today_str}）および直近24時間以内に発表される重要経済指標（例：米CPI、雇用統計、FOMC、日銀会合、ECB理事会等）を特定してください。
 - 該当がある場合、レポートの冒頭に「⚠️重要指標アラート」として、日本時間での発表時刻と市場への想定インパクトを記載してください。
 - 円安による日銀の為替介入や地政学的リスクなど不確定でも注意するべき点があれば、要点を簡潔にまとめてください。
 """
+
     if 5 <= hour < 10:
         mode_title = f"🌅 【朝：日本株寄り付き戦略】{today_str}"
-        prompt_content = f"昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください..."
+        prompt_content = f"昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。昨晩のナスダックやSOX指数の動きを日経平均への影響に結びつけてください。"
     elif 15 <= hour < 19:
         mode_title = f"🌆 【夕：日経総括 ＆ 欧州初動】{today_str}"
-        prompt_content = f"日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください..."
+        prompt_content = f"日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください。夜の米株市場への橋渡しとなる視点をお願いします。"
     else:
         mode_title = f"🌃 【夜：NY開場直前・米株/ゴールド特化】{today_str}"
-        prompt_content = f"NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分析です..."
+        prompt_content = f"NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分析です。金利(US10Y)の動きを意識した解説をしてください。"
 
-    final_prompt = f"あなたは日米の投資家から信頼されるトップストラテジスト...（中略）\n{market_data_str}\n{calendar_instruction}\n{prompt_content}"
+    final_prompt = f"あなたは日米の投資家から信頼されるトップストラテジストです。以下の市場データに基づき、プロの視点で簡潔かつ鋭い分析レポートを作成してください。\n\n【市場データ】\n{market_data_str}\n{calendar_instruction}\n\n【分析リクエスト】\n{prompt_content}"
 
-    # --- APIキーを順番に試すループ ---
+    # --- API実行ループ（安定版モデル + リトライ待機） ---
     response_text = None
     for key in valid_keys:
-        try:
-            genai.configure(api_key=key)
-            model = genai.GenerativeModel('models/gemini-2.5-flash')
-            response = model.generate_content(final_prompt)
-            response_text = response.text
-            if response_text:
-                print(f"✅ API実行成功 (Key末尾: {key[-4:]})")
-                break
-        except Exception as e:
-            if "429" in str(e):
-                print(f"⚠️ API制限(429)発生。次のキーを試します...")
-                continue
-            else:
-                raise e
+        for attempt in range(2):  # 各キーで最大2回試行
+            try:
+                genai.configure(api_key=key)
+                # 最も制限に強い安定版 1.5-flash を使用
+                model = genai.GenerativeModel('models/gemini-1.5-flash')
+                response = model.generate_content(final_prompt)
+                response_text = response.text
+                if response_text:
+                    print(f"✅ API実行成功 (Key末尾: {key[-4:]})")
+                    break
+            except Exception as e:
+                error_msg = str(e)
+                if "429" in error_msg:
+                    wait_time = 30  # IPブロック回避のためのクールダウン
+                    print(f"⚠️ 制限(429)発生 (Key末尾: {key[-4:]})。{wait_time}秒待機して再試行します({attempt+1}/2)...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"❌ 予期せぬエラー: {e}")
+                    break
+        
+        if response_text:
+            break
 
     if not response_text:
-        raise Exception("利用可能なすべてのAPIキーで制限がかかりました。")
+        raise Exception("利用可能なすべてのAPIキーで制限がかかりました。IP制限の可能性があります。")
 
     return f"{mode_title}\n\n{response_text}"
 
