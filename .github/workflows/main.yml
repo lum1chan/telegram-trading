@@ -1,26 +1,10 @@
 name: Market Briefing Bot
 
 on:
-  schedule:
-    # --- 月曜日専用 ---
-    # 日本時間 06:42 (UTC 日曜 21:42) 
-    - cron: '42 21 * * 0'
-    # 日本時間 15:42 (UTC 月曜 06:42) ※16:00より早め
-    - cron: '42 6 * * 1'
-    # 日本時間 20:42 (UTC 月曜 11:42) ※21:00より早め
-    - cron: '42 11 * * 1'
-
-    # --- 火曜日〜金曜日用 ---
-    # 日本時間 06:42 (UTC 前日 21:42) 
-    - cron: '42 21 * * 1-4'
-    # 日本時間 17:42 (UTC 当日 08:42) ※18:00より早め
-    - cron: '42 8 * * 2-5'
-    # 日本時間 20:42 (UTC 当日 11:42) ※21:00より早め
-    - cron: '42 11 * * 2-5'
-
+  # GASからの信号（リモコン操作）のみに絞る
   workflow_dispatch:
 
-# Node.js 20の警告を消すための設定
+# 警告対策の環境変数は残しておきます
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -47,5 +31,4 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          python bot.py
+        run: python bot.py
