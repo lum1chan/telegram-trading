@@ -4,7 +4,7 @@ import traceback
 import time
 import yfinance as yf
 import requests
-import google.generativeai as genai
+from google import genai
 from datetime import datetime
 import pytz
 import random
@@ -49,7 +49,7 @@ def get_market_data():
     return "\n".join(data_lines)
 
 # ==========================================
-# 3. AI分析生成 (Gemini 1.5 Flash 安定版)
+# 3. AI分析生成
 # ==========================================
 def generate_analysis(market_data_str, force_mode=None):
     api_keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
@@ -61,62 +61,75 @@ def generate_analysis(market_data_str, force_mode=None):
     hour = force_mode if force_mode is not None else now.hour
     today_str = now.strftime("%Y年%m月%d日(%a)")
 
-    # --- 分析の重要ルール (🔥/🧊 と 日本主力銘柄の指示を追加) ---
-    analysis_rules = """
-【分析の重要ルール】
-- 上昇・追い風と予想する銘柄や指数には「🔥」、下落・逆風と予想するものには「🧊」のマークを必ず名称の横に付けてください。
-- リストにない銘柄でも、日本の代表的な銘柄（アドバンテスト(6857)、東京エレクトロン(8035)、三菱UFJ(8306)、トヨタ(7203)など）を君の知識から積極的に選び、具体的にコード付きで解説に含めること。
-- 回答はTelegramで配信するため、箇条書きを活用して視認性を高めてください。
-"""
-
     calendar_instruction = f"""
-【最優先指示：経済指標・イベントチェック】
+【経済指標・イベント】
 - 本日（{today_str}）および直近24時間以内に発表される重要経済指標（例：米CPI、雇用統計、FOMC、日銀会合等）を特定してください。
-- 該当がある場合、冒頭に「⚠️重要指標アラート」を記載してください。
+- 該当がある場合、冒頭に「⚠️重要指標アラート」を記載。
 """
 
-    # --- 時間帯別プロンプト ---
-    if 5 <= hour < 10:
+    if 5 <= hour < 11:
         mode_title = f"🌅 【朝：日本株寄り付き戦略】{today_str}"
-        prompt_content = f"""昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。
+        prompt_content = """昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。
 - 前日のニュースや米国セクターETF(XLK/XLF/XLE)の動きから、日本の「追い風」「逆風」セクターと具体銘柄（コード付）を推論。
 - 日米金利差とドル円の動向から、輸出株・内需株への影響を解説。"""
     
-    elif 15 <= hour < 19:
+    elif 15 <= hour < 20:
         mode_title = f"🌆 【夕：日経総括 ＆ 欧州初動】{today_str}"
-        prompt_content = f"""日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください。
+        prompt_content = """日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください。
 - 今日の日本市場の総括。どのセクターや銘柄に資金が集まったかを解説。
-- 欧州市場開始後のGold(XAU/USD),US100でロンドン勢が意識しそうな節目を推論。
+- 欧州市場開始後のGold(XAU/USD),US100でロンドン勢が意識しそうな節目（レジサポ）を推論。
 - NY市場開場までに予想されるGold(XAU/USD),US100の短期トレンド分析。"""
     
     else:
         mode_title = f"🌃 【夜：NY開場直前・米株/ゴールド特化】{today_str}"
-        prompt_content = f"""NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分析です。日本株の情報は不要。
-- NY市場開場に向けてUS100,Gold(XAU/USD)のトレンドや推移などについて分析してください。
-- US100,Gold(XAU/USD)のデイトレードで意識することをまとめてください。
-- 指標発表がある場合は、発表直後のボラティリティ予想と立ち回り。
-- 前日のニュースなどで値動きが予想される銘柄やセクターをまとめて解説。"""
+        prompt_content = """NY市場開場に向けた、US100とGold(XAU/USD)の短期決戦チャート分析です。日本株の情報は不要。
+- NY市場開場に向けてUS100,Gold(XAU/USD)のトレンドや、意識される心理的節目、レジサポを分析。
+- デイトレードにおける注意点やシナリオ（押し目買い・戻り売り）をまとめてください。
+- 指標発表がある場合のボラティリティ予想と立ち回り。
+- 個別決算などで値動きが予想される米国銘柄やセクターの解説。"""
 
-    final_prompt = f"あなたは日米のトップストラテジストです。\n{analysis_rules}\n\n【市場データ】\n{market_data_str}\n\n{calendar_instruction}\n\n【分析リクエスト】\n{prompt_content}"
+    # カスタム指示の統合
+    final_prompt = f"""
+あなたは日米の投資家から信頼されるトップストラテジスト、そして現役のトレーダーです。
+以下のデータとあなたの深い知識を組み合わせ、非常に具体的かつ実戦的なレポートを作成してください。
 
-    # --- API実行ループ (404対策) ---
+【最新市場データ】
+{market_data_str}
+{calendar_instruction}
+
+【指示詳細】
+{prompt_content}
+
+【重要：分析・表示ルール】
+- 上昇・追い風と予想する銘柄や指数には「🔥」、下落・逆風と予想するものには「🧊」のマークを必ず名称の横に付けること。
+- 日本の代表的な銘柄（アドバンテスト(6857)、東京エレクトロン(8035)、三菱UFJ(8306)、トヨタ(7203)など）を積極的に選び、具体的にコード付きで解説に含めること。
+
+【トーン＆マナー】
+- 特殊記号（*や_）は絶対に使わず、プレーンテキストと絵文字のみで出力。
+- 箇条書きを使い、結論から簡潔に。
+- プロらしい深い洞察を含めること。
+"""
+
     response_text = None
-    model_names = ['gemini-1.5-flash', 'models/gemini-1.5-flash']
-
     for key in valid_keys:
-        genai.configure(api_key=key)
-        for m_name in model_names:
-            try:
-                model = genai.GenerativeModel(m_name)
-                response = model.generate_content(final_prompt)
-                if response and response.text:
-                    response_text = response.text
-                    break
-            except: continue
-        if response_text: break
+        try:
+            client = genai.Client(api_key=key)
+            response = client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=final_prompt
+            )
+            
+            if response and response.text:
+                response_text = response.text
+                print(f"✅ AI分析生成成功 (Key末尾: {key[-4:]})")
+                break
+        except Exception as e:
+            print(f"⚠️ APIエラー (Key末尾: {key[-4:]}): {e}")
+            time.sleep(2)
+            continue
 
     if not response_text:
-        raise Exception("分析生成に失敗しました。")
+        raise Exception("全てのAPIキーで分析生成に失敗しました。")
 
     return f"{mode_title}\n\n{response_text}"
 
@@ -132,11 +145,18 @@ def main():
         analysis = generate_analysis(market_data)
         
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        # 特殊記号を禁止しているため、parse_modeは指定せず送信
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": f"=== Briefing ===\n{analysis}"}
-        requests.post(url, json=payload)
-        print("✅ 完了")
+        res = requests.post(url, json=payload)
+        
+        if res.status_code == 200:
+            print("✅ 完了")
+        else:
+            print(f"❌ Telegram送信エラー: {res.text}")
+            
     except Exception as e:
-        print(f"❌ エラー: {e}")
+        print(f"❌ エラー発生: {e}")
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
