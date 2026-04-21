@@ -49,7 +49,7 @@ def get_market_data():
     return "\n".join(data_lines)
 
 # ==========================================
-# 3. AI分析生成
+# 3. AI分析生成 (Gemini 2.5 Flash)
 # ==========================================
 def generate_analysis(market_data_str, force_mode=None):
     api_keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
@@ -71,7 +71,9 @@ def generate_analysis(market_data_str, force_mode=None):
         mode_title = f"🌅 【朝：日本株寄り付き戦略】{today_str}"
         prompt_content = """昨晩の米国市場と今朝の気配値から、今日の日本市場を分析してください。
 - 前日のニュースや米国セクターETF(XLK/XLF/XLE)の動きから、日本の「追い風」「逆風」セクターと具体銘柄（コード付）を推論。
-- 日米金利差とドル円の動向から、輸出株・内需株への影響を解説。"""
+- 日米金利差とドル円の動向から、輸出株・内需株への影響を解説。
+- 円安による日銀の為替介入や地政学的リスクなど不確定でも注意するべき点があれば、要点を簡潔にまとめてください。 
+"""
     
     elif 15 <= hour < 20:
         mode_title = f"🌆 【夕：日経総括 ＆ 欧州初動】{today_str}"
@@ -88,7 +90,6 @@ def generate_analysis(market_data_str, force_mode=None):
 - 指標発表がある場合のボラティリティ予想と立ち回り。
 - 個別決算などで値動きが予想される米国銘柄やセクターの解説。"""
 
-    # カスタム指示の統合
     final_prompt = f"""
 あなたは日米の投資家から信頼されるトップストラテジスト、そして現役のトレーダーです。
 以下のデータとあなたの深い知識を組み合わせ、非常に具体的かつ実戦的なレポートを作成してください。
@@ -114,8 +115,9 @@ def generate_analysis(market_data_str, force_mode=None):
     for key in valid_keys:
         try:
             client = genai.Client(api_key=key)
+            # モデルを 2.5 Flash に設定
             response = client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.5-flash',
                 contents=final_prompt
             )
             
@@ -145,7 +147,6 @@ def main():
         analysis = generate_analysis(market_data)
         
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        # 特殊記号を禁止しているため、parse_modeは指定せず送信
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": f"=== Briefing ===\n{analysis}"}
         res = requests.post(url, json=payload)
         
