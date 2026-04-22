@@ -49,12 +49,19 @@ def get_market_data():
     return "\n".join(data_lines)
 
 # ==========================================
-# 3. AI分析生成 (Gemini 2.5 Flash)
+# 3. AI分析生成 (フォールバック機能付き)
 # ==========================================
 def generate_analysis(market_data_str, force_mode=None):
     api_keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
     valid_keys = [k for k in api_keys if k]
     random.shuffle(valid_keys)
+
+    # 試行するモデルの優先順位
+    model_priority = [
+        'gemini-2.5-flash', 
+        'gemini-2.5-flash-lite', 
+        'gemini-3.1-flash-lite-preview'
+    ]
 
     jst = pytz.timezone('Asia/Tokyo')
     now = datetime.now(jst)
@@ -112,25 +119,28 @@ def generate_analysis(market_data_str, force_mode=None):
 
     response_text = None
     for key in valid_keys:
-        try:
-            client = genai.Client(api_key=key)
-            # モデルを 2.5 Flash に設定
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=final_prompt
-            )
-            
-            if response and response.text:
-                response_text = response.text
-                print(f"✅ AI分析生成成功 (Key末尾: {key[-4:]})")
-                break
-        except Exception as e:
-            print(f"⚠️ APIエラー (Key末尾: {key[-4:]}): {e}")
-            time.sleep(2)
-            continue
+        client = genai.Client(api_key=key)
+        for m_name in model_priority:
+            try:
+                print(f"🔄 試行中: {m_name} (Key末尾: {key[-4:]})...")
+                response = client.models.generate_content(
+                    model=m_name,
+                    contents=final_prompt
+                )
+                
+                if response and response.text:
+                    response_text = response.text
+                    print(f"✅ AI分析生成成功! 使用モデル: {m_name} (Key末尾: {key[-4:]})")
+                    break
+            except Exception as e:
+                print(f"⚠️ {m_name} エラー: {e}")
+                time.sleep(1)
+                continue
+        if response_text:
+            break
 
     if not response_text:
-        raise Exception("全てのAPIキーで分析生成に失敗しました。")
+        raise Exception("全てのAPIキーおよびモデル候補で分析生成に失敗しました。")
 
     return f"{mode_title}\n\n{response_text}"
 
