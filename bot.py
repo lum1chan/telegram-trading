@@ -16,6 +16,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_2")
+WEBAPP_URL = os.getenv("WEBAPP_URL") # WebアプリのURL (例: https://your-app.onrender.com/api/telegram/webhook)
 
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not GEMINI_API_KEY:
     print("【エラー】環境変数が設定されていません！")
@@ -145,6 +146,24 @@ def generate_analysis(market_data_str, force_mode=None):
     return f"{mode_title}\n\n{response_text}"
 
 # ==========================================
+# 新規追加：Webアプリ送信処理
+# ==========================================
+def send_to_webapp(message):
+    if not WEBAPP_URL:
+        print("⚠️ WEBAPP_URL が設定されていないため、Webアプリへの送信をスキップします。")
+        return
+    
+    payload = {"message": message}
+    try:
+        res = requests.post(WEBAPP_URL, json=payload, timeout=10)
+        if res.status_code == 200:
+            print("✅ Webアプリへの同期完了")
+        else:
+            print(f"❌ Webアプリ送信エラー: {res.status_code}")
+    except Exception as e:
+        print(f"❌ Webアプリ通信エラー: {e}")
+
+# ==========================================
 # 4. メイン処理
 # ==========================================
 def main():
@@ -155,14 +174,18 @@ def main():
         market_data = get_market_data()
         analysis = generate_analysis(market_data)
         
+        # 1. Telegram送信
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": f"=== Briefing ===\n{analysis}"}
         res = requests.post(url, json=payload)
         
         if res.status_code == 200:
-            print("✅ 完了")
+            print("✅ Telegram送信完了")
         else:
             print(f"❌ Telegram送信エラー: {res.text}")
+        
+        # 2. Webアプリへ同期 (新規追加)
+        send_to_webapp(analysis)
             
     except Exception as e:
         print(f"❌ エラー発生: {e}")
