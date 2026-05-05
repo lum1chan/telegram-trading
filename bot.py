@@ -287,7 +287,39 @@ def generate_analysis(market_data_str, news_str, calendar_str, force_mode=None):
     return f"{mode_title}\n\n{response_text}"
 
 # ==========================================
-# 6. Webアプリ送信処理
+# 6. Telegram送信（4096文字制限・自動分割対応）
+# ==========================================
+TELEGRAM_MAX_CHARS = 4000  # 余裕を持って4000に設定
+
+def send_telegram(text):
+    """Telegramの4096文字制限に対応して長文を自動分割して送信する"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    chunks = []
+    lines = text.splitlines(keepends=True)
+    current = ""
+    for line in lines:
+        if len(current) + len(line) > TELEGRAM_MAX_CHARS:
+            if current:
+                chunks.append(current.rstrip())
+            current = line
+        else:
+            current += line
+    if current.strip():
+        chunks.append(current.rstrip())
+
+    total = len(chunks)
+    for i, chunk in enumerate(chunks, 1):
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": chunk}
+        res = requests.post(url, json=payload, timeout=10)
+        if res.status_code == 200:
+            print(f"✅ Telegram送信完了 ({i}/{total})")
+        else:
+            print(f"❌ Telegram送信エラー ({i}/{total}): {res.text}")
+        if i < total:
+            time.sleep(1)  # 連続送信によるレート制限を回避
+
+# ==========================================
+# 8. Webアプリ送信処理
 # ==========================================
 def send_to_webapp(message):
     if not WEBAPP_URL:
@@ -305,7 +337,7 @@ def send_to_webapp(message):
         print(f"❌ Webアプリ通信エラー: {e}")
 
 # ==========================================
-# 7. メイン処理
+# 9. メイン処理
 # ==========================================
 def main():
     jst = pytz.timezone('Asia/Tokyo')
@@ -317,15 +349,8 @@ def main():
         calendar = get_economic_calendar()
         analysis = generate_analysis(market_data, news, calendar)
         
-        # 1. Telegram送信
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": f"=== Briefing ===\n{analysis}"}
-        res = requests.post(url, json=payload)
-        
-        if res.status_code == 200:
-            print("✅ Telegram送信完了")
-        else:
-            print(f"❌ Telegram送信エラー: {res.text}")
+        # 1. Telegram送信（4096文字制限対応・自動分割）
+        send_telegram(f"=== Briefing ===\n{analysis}")
         
         # 2. Webアプリへ同期 (新規追加)
         send_to_webapp(analysis)
