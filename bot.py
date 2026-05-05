@@ -6,7 +6,8 @@ import xml.etree.ElementTree as ET
 import yfinance as yf
 import requests
 from google import genai
-from datetime import datetime
+from datetime import datetime, timedelta
+import exchange_calendars as xcals
 import pytz
 import random
 
@@ -139,7 +140,21 @@ def get_economic_calendar():
     return "\n".join(events)
 
 # ==========================================
-# 4. 市場データ取得
+# 4. 市場休場チェック
+# ==========================================
+def get_market_status(date):
+    """指定日の東証(XJPX)・NYSE(XNYS)の開場状況を返す。取得失敗時は開場扱い。"""
+    date_str = date.strftime("%Y-%m-%d")
+    result = {"tse_open": True, "nyse_open": True}
+    try:
+        result["tse_open"]  = xcals.get_calendar("XJPX").is_session(date_str)
+        result["nyse_open"] = xcals.get_calendar("XNYS").is_session(date_str)
+    except Exception as e:
+        print(f"⚠️ 市場カレンダー取得エラー（開場扱いで続行）: {e}")
+    return result
+
+# ==========================================
+# 5. 市場データ取得
 # ==========================================
 TICKERS = {
     "US100": "^NDX", "SOX": "^SOX", "NVDA": "NVDA", "Gold": "GC=F",
@@ -166,9 +181,9 @@ def get_market_data():
     return "\n".join(data_lines)
 
 # ==========================================
-# 5. AI分析生成 (フォールバック機能付き)
+# 6. AI分析生成 (フォールバック機能付き)
 # ==========================================
-def generate_analysis(market_data_str, news_str, calendar_str, force_mode=None):
+def generate_analysis(market_data_str, news_str, calendar_str, nyse_notice=None, force_mode=None):
     api_keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
     valid_keys = [k for k in api_keys if k]
     random.shuffle(valid_keys)
@@ -186,15 +201,16 @@ def generate_analysis(market_data_str, news_str, calendar_str, force_mode=None):
     today_str = now.strftime("%Y年%m月%d日(%a)")
 
     # 経済カレンダーセクション
+    nyse_notice_line = f"\n🔔 {nyse_notice}\n" if nyse_notice else ""
     if calendar_str:
         cal_section = f"""
 【経済指標カレンダー（本日・翌日 / USD・JPY 高中インパクト）】
 🔴=高インパクト  🟡=中インパクト  🇺🇸=USD  🇯🇵=JPY  時刻はJST
-
+{nyse_notice_line}
 {calendar_str}
 """
     else:
-        cal_section = "【経済指標カレンダー】本日・翌日の対象指標なし\n"
+        cal_section = f"【経済指標カレンダー】本日・翌日の対象指標なし{nyse_notice_line}\n"
 
     # ニュースセクション
     if news_str:
@@ -284,10 +300,11 @@ def generate_analysis(market_data_str, news_str, calendar_str, force_mode=None):
     if not response_text:
         raise Exception("全てのAPIキーおよびモデル候補で分析生成に失敗しました。")
 
-    return f"{mode_title}\n\n{response_text}"
+    notice_header = f"\n🔔 {nyse_notice}\n" if nyse_notice else ""
+    return f"{mode_title}{notice_header}\n\n{response_text}"
 
 # ==========================================
-# 6. Telegram送信（4096文字制限・自動分割対応）
+# 7. Telegram送信（4096文字制限・自動分割対応）
 # ==========================================
 TELEGRAM_MAX_CHARS = 4000  # 余裕を持って4000に設定
 
@@ -319,7 +336,7 @@ def send_telegram(text):
             time.sleep(1)  # 連続送信によるレート制限を回避
 
 # ==========================================
-# 8. Webアプリ送信処理
+# 8. Webアプリ送信処理  
 # ==========================================
 def send_to_webapp(message):
     if not WEBAPP_URL:
@@ -341,20 +358,52 @@ def send_to_webapp(message):
 # ==========================================
 def main():
     jst = pytz.timezone('Asia/Tokyo')
-    now_str = datetime.now(jst).strftime("%Y/%m/%d %H:%M")
-    
+    now_jst = datetime.now(jst)
+    today    = now_jst.date()
+    tomorrow = today + timedelta(days=1)
+    hour     = now_jst.hour
+
+    # --- 市場休場チェック ---
+    today_st = get_market_status(today)
+    tmrw_st  = get_market_status(tomorrow)
+
+    is_morning = 5  <= hour < 11
+    is_evening = 15 <= hour < 20
+    is_night   = not (is_morning or is_evening)
+
+    # 朝: 東証休場 → スキップ
+    if is_morning and not today_st["tse_open"]:
+        print(f"ℹ️ 本日（{today}）東証休場のため朝ブリーフィングをスキップします。")
+        sys.exit(0)
+
+    # 夕: 東証休場（週末・祝日） → スキップ
+    if is_evening and not today_st["tse_open"]:
+        print(f"ℹ️ 本日（{today}）東証休場のため夕ブリーフィングをスキップします。")
+        sys.exit(0)
+
+    # 夜: NYSE休場 → スキップ
+    if is_night and not today_st["nyse_open"]:
+        print(f"ℹ️ 本日（{today}）NYSE休場のため夜ブリーフィングをスキップします。")
+        sys.exit(0)
+
+    # NYSE休場通知文を生成
+    nyse_notice = None
+    if is_morning and not today_st["nyse_open"]:
+        nyse_notice = f"本日（{today.strftime('%m/%d')}）はNYSEが休場です。夜のブリーフィングはお休みします。"
+        print(f"🔔 {nyse_notice}")
+    elif is_evening and not tmrw_st["nyse_open"]:
+        nyse_notice = f"明日（{tomorrow.strftime('%m/%d')}）はNYSEが休場です。夜のブリーフィングはお休みします。"
+        print(f"🔔 {nyse_notice}")
+
     try:
         market_data = get_market_data()
-        news = get_news_headlines()
-        calendar = get_economic_calendar()
-        analysis = generate_analysis(market_data, news, calendar)
-        
-        # 1. Telegram送信（4096文字制限対応・自動分割）
+        news        = get_news_headlines()
+        calendar    = get_economic_calendar()
+        analysis    = generate_analysis(market_data, news, calendar, nyse_notice=nyse_notice)
+
         send_telegram(f"=== Briefing ===\n{analysis}")
-        
-        # 2. Webアプリへ同期 (新規追加)
         send_to_webapp(analysis)
-            
+
     except Exception as e:
         print(f"❌ エラー発生: {e}")
         traceback.print_exc()
