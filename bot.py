@@ -2,6 +2,7 @@ import os
 import sys
 import traceback
 import time
+import xml.etree.ElementTree as ET
 import yfinance as yf
 import requests
 from google import genai
@@ -23,7 +24,122 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not GEMINI_API_KEY:
     sys.exit(1)
 
 # ==========================================
-# 2. 市場データ取得
+# 2. ニュースRSS取得
+# ==========================================
+NEWS_FEEDS = [
+    ("NHK経済", "https://www3.nhk.or.jp/rss/news/cat6.xml"),
+    ("NHK政治", "https://www3.nhk.or.jp/rss/news/cat4.xml"),
+    ("Reuters Japan", "https://feeds.reuters.com/reuters/JPbusinessNews"),
+]
+NEWS_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; MarketBot/1.0)"}
+MAX_ITEMS_PER_FEED = 6
+
+def get_news_headlines():
+    """NHK・Reuters JapanのRSSから最新ヘッドラインを取得する"""
+    all_news = []
+    for source_name, url in NEWS_FEEDS:
+        try:
+            resp = requests.get(url, timeout=10, headers=NEWS_HEADERS)
+            resp.raise_for_status()
+            root = ET.fromstring(resp.content)
+            items = root.findall('.//item')[:MAX_ITEMS_PER_FEED]
+            for item in items:
+                title = item.findtext('title', '').strip()
+                link = item.findtext('link', '').strip()
+                if not link:
+                    link = item.findtext('guid', '').strip()
+                if title:
+                    entry = f"[{source_name}] {title}"
+                    if link:
+                        entry += f"\n  {link}"
+                    all_news.append(entry)
+            print(f"✅ {source_name}: {len(items)}件取得")
+        except Exception as e:
+            print(f"⚠️ {source_name} ニュース取得エラー: {e}")
+
+    if not all_news:
+        return None
+    return "\n".join(all_news)
+
+# ==========================================
+# 3. 経済カレンダー取得 (ForexFactory XML)
+# ==========================================
+CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
+CALENDAR_COUNTRIES = {"USD", "JPY"}
+CALENDAR_IMPACTS = {"High", "Medium"}
+
+def get_economic_calendar():
+    """ForexFactoryから今日・明日のUSD/JPY高インパクト経済指標を取得しJST変換して返す"""
+    ny_tz = pytz.timezone('America/New_York')
+    jst = pytz.timezone('Asia/Tokyo')
+    now_jst = datetime.now(jst)
+
+    try:
+        resp = requests.get(CALENDAR_URL, timeout=10, headers=NEWS_HEADERS)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+    except Exception as e:
+        print(f"⚠️ 経済カレンダー取得エラー: {e}")
+        return None
+
+    events = []
+    for ev in root.findall('event'):
+        country = ev.findtext('country', '').strip()
+        impact  = ev.findtext('impact', '').strip()
+        if country not in CALENDAR_COUNTRIES or impact not in CALENDAR_IMPACTS:
+            continue
+
+        title    = ev.findtext('title', '').strip()
+        date_str = ev.findtext('date', '').strip()
+        time_str = ev.findtext('time', '').strip()
+        forecast = ev.findtext('forecast', '').strip()
+        previous = ev.findtext('previous', '').strip()
+        actual   = ev.findtext('actual', '').strip()
+
+        # 今日・明日のみ対象
+        try:
+            ev_date = datetime.strptime(date_str, "%b %d, %Y").date()
+            delta = (ev_date - now_jst.date()).days
+            if delta < 0 or delta > 1:
+                continue
+        except ValueError:
+            continue
+
+        # 時刻をJSTに変換
+        time_display = ""
+        if time_str and time_str not in ("All Day", "Tentative"):
+            try:
+                dt_ny = datetime.strptime(
+                    f"{date_str} {time_str.upper()}", "%b %d, %Y %I:%M%p"
+                )
+                dt_ny = ny_tz.localize(dt_ny)
+                dt_jst = dt_ny.astimezone(jst)
+                time_display = dt_jst.strftime("%m/%d %H:%M JST")
+            except ValueError:
+                time_display = f"{time_str} ET"
+        elif time_str:
+            time_display = time_str
+
+        icon = "🔴" if impact == "High" else "🟡"
+        flag = "🇺🇸" if country == "USD" else "🇯🇵"
+        line = f"{icon}{flag} {title}  {time_display}"
+        if actual:
+            line += f"  結果: {actual}"
+        if forecast:
+            line += f"  予測: {forecast}"
+        if previous:
+            line += f"  前回: {previous}"
+        events.append(line)
+
+    if not events:
+        print("ℹ️ 経済カレンダー: 対象指標なし")
+        return None
+
+    print(f"✅ 経済カレンダー: {len(events)}件取得")
+    return "\n".join(events)
+
+# ==========================================
+# 4. 市場データ取得
 # ==========================================
 TICKERS = {
     "US100": "^NDX", "SOX": "^SOX", "NVDA": "NVDA", "Gold": "GC=F",
@@ -50,9 +166,9 @@ def get_market_data():
     return "\n".join(data_lines)
 
 # ==========================================
-# 3. AI分析生成 (フォールバック機能付き)
+# 5. AI分析生成 (フォールバック機能付き)
 # ==========================================
-def generate_analysis(market_data_str, force_mode=None):
+def generate_analysis(market_data_str, news_str, calendar_str, force_mode=None):
     api_keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
     valid_keys = [k for k in api_keys if k]
     random.shuffle(valid_keys)
@@ -69,11 +185,36 @@ def generate_analysis(market_data_str, force_mode=None):
     hour = force_mode if force_mode is not None else now.hour
     today_str = now.strftime("%Y年%m月%d日(%a)")
 
+    # 経済カレンダーセクション
+    if calendar_str:
+        cal_section = f"""
+【経済指標カレンダー（本日・翌日 / USD・JPY 高中インパクト）】
+🔴=高インパクト  🟡=中インパクト  🇺🇸=USD  🇯🇵=JPY  時刻はJST
+
+{calendar_str}
+"""
+    else:
+        cal_section = "【経済指標カレンダー】本日・翌日の対象指標なし\n"
+
+    # ニュースセクション
+    if news_str:
+        news_section = f"""
+【最新ニュース（{today_str} 取得 / NHK・Reuters Japan）】
+以下を一次情報として使用してください。確認されていない事象の推測や前置きは不要です。
+
+{news_str}
+"""
+    else:
+        news_section = "【最新ニュース】取得失敗（学習データを参考にしてください）\n"
+
     calendar_instruction = f"""
-【経済指標・イベント】
-- 本日（{today_str}）および直近24時間以内に発表される重要経済指標（例：米CPI、雇用統計、FOMC、日銀会合等）を特定してください。
-- 該当がある場合、冒頭に「⚠️重要指標アラート」を記載。
-- 円安による日銀の為替介入や地政学的リスク、政治家の発言など不確定要素でも注意するべき点と現在進行している問題があれば、要点を簡潔にまとめてください。その事柄で暴騰や暴落が起きていたら具体的に記載してください
+{cal_section}
+{news_section}
+【分析指示】
+- 経済カレンダーに🔴指標がある場合は冒頭に「⚠️重要指標アラート」を記載し、指標名・発表時刻(JST)・予測値・前回値を明示してください。
+- ニュースで確認された為替介入・地政学リスク・政治家発言があれば、ソース名を付けて箇条書きで記載してください。
+- 実際に暴騰・暴落が起きている場合は、銘柄/指数・値幅を具体的に記載してください。
+- カレンダーやニュースに根拠のない推測・前置きは省いてください。
 """
 
     if 5 <= hour < 11:
@@ -146,7 +287,7 @@ def generate_analysis(market_data_str, force_mode=None):
     return f"{mode_title}\n\n{response_text}"
 
 # ==========================================
-# 新規追加：Webアプリ送信処理
+# 6. Webアプリ送信処理
 # ==========================================
 def send_to_webapp(message):
     if not WEBAPP_URL:
@@ -164,7 +305,7 @@ def send_to_webapp(message):
         print(f"❌ Webアプリ通信エラー: {e}")
 
 # ==========================================
-# 4. メイン処理
+# 7. メイン処理
 # ==========================================
 def main():
     jst = pytz.timezone('Asia/Tokyo')
@@ -172,7 +313,9 @@ def main():
     
     try:
         market_data = get_market_data()
-        analysis = generate_analysis(market_data)
+        news = get_news_headlines()
+        calendar = get_economic_calendar()
+        analysis = generate_analysis(market_data, news, calendar)
         
         # 1. Telegram送信
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
