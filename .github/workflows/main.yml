@@ -1,10 +1,9 @@
 name: Market Briefing Bot
 
 on:
-  # GASからの信号（リモコン操作）のみに絞る
+  # GASからのトリガーのみ（休場判定はbot.py内で完結）
   workflow_dispatch:
 
-# 警告対策の環境変数は残しておきます
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -27,7 +26,6 @@ jobs:
 
       - name: Run Market Bot
         env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
