@@ -183,7 +183,7 @@ def get_market_data():
 # ==========================================
 # 6. AI分析生成 (フォールバック機能付き)
 # ==========================================
-def generate_analysis(market_data_str, news_str, calendar_str, nyse_notice=None, force_mode=None):
+def generate_analysis(market_data_str, news_str, calendar_str, nyse_notice=None, tse_open=True, force_mode=None):
     api_keys = [GEMINI_API_KEY, GEMINI_API_KEY_2]
     valid_keys = [k for k in api_keys if k]
     random.shuffle(valid_keys)
@@ -240,11 +240,18 @@ def generate_analysis(market_data_str, news_str, calendar_str, nyse_notice=None,
 - 日米金利差とドル円の動向から、輸出株・内需株への影響を解説。"""
     
     elif 15 <= hour < 20:
-        mode_title = f"🌆 【夕：日経総括 ＆ 欧州初動】{today_str}"
-        prompt_content = """日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください。
+        if tse_open:
+            mode_title = f"🌆 【夕：日経総括 ＆ 欧州初動】{today_str}"
+            prompt_content = """日本市場の引け状況の整理と、動き出したロンドン市場の動向を分析してください。
 - 今日の日本市場の総括。どのセクターや銘柄に資金が集まったかを解説。
 - 欧州市場開始後のGold(XAU/USD),US100でロンドン勢が意識しそうな節目（レジサポ）を推論。
 - NY市場開場までに予想されるGold(XAU/USD),US100の短期トレンド分析。"""
+        else:
+            mode_title = f"🌆 【夕：欧州初動 ＆ NY開場前分析】{today_str}（日本市場休場）"
+            prompt_content = """本日は日本市場が休場です。日本株の総括は不要です。ロンドン市場とNY開場前の分析に集中してください。
+- 欧州市場開始後のGold(XAU/USD),US100でロンドン勢が意識しそうな節目（レジサポ）を推論。
+- NY市場開場までに予想されるGold(XAU/USD),US100の短期トレンド分析。
+- 日本市場休場中のドル円・クロス円の動向と、NY開場後の為替への影響を解説。"""
     
     else:
         mode_title = f"🌃 【夜：NY開場直前・米株/ゴールド特化】{today_str}"
@@ -376,9 +383,9 @@ def main():
         print(f"ℹ️ 本日（{today}）東証休場のため朝ブリーフィングをスキップします。")
         sys.exit(0)
 
-    # 夕: 東証休場（週末・祝日） → スキップ
-    if is_evening and not today_st["tse_open"]:
-        print(f"ℹ️ 本日（{today}）東証休場のため夕ブリーフィングをスキップします。")
+    # 夕: 東証・NYSE当日両方休場 → スキップ
+    if is_evening and not today_st["tse_open"] and not today_st["nyse_open"]:
+        print(f"ℹ️ 本日（{today}）東証・NYSE共に休場のため夕ブリーフィングをスキップします。")
         sys.exit(0)
 
     # 夜: NYSE休場 → スキップ
@@ -389,17 +396,23 @@ def main():
     # NYSE休場通知文を生成
     nyse_notice = None
     if is_morning and not today_st["nyse_open"]:
+        # 朝: 当日NYSE休場
         nyse_notice = f"本日（{today.strftime('%m/%d')}）はNYSEが休場です。夜のブリーフィングはお休みします。"
-        print(f"🔔 {nyse_notice}")
-    elif is_evening and not tmrw_st["nyse_open"]:
-        nyse_notice = f"明日（{tomorrow.strftime('%m/%d')}）はNYSEが休場です。夜のブリーフィングはお休みします。"
+    elif is_evening:
+        if not today_st["nyse_open"]:
+            # 夕: 当日NYSE休場（当日優先）
+            nyse_notice = f"本日（{today.strftime('%m/%d')}）はNYSEが休場です。夜のブリーフィングはお休みします。"
+        elif not tmrw_st["nyse_open"]:
+            # 夕: 翌日NYSE休場
+            nyse_notice = f"明日（{tomorrow.strftime('%m/%d')}）はNYSEが休場です。夜のブリーフィングはお休みします。"
+    if nyse_notice:
         print(f"🔔 {nyse_notice}")
 
     try:
         market_data = get_market_data()
         news        = get_news_headlines()
         calendar    = get_economic_calendar()
-        analysis    = generate_analysis(market_data, news, calendar, nyse_notice=nyse_notice)
+        analysis    = generate_analysis(market_data, news, calendar, nyse_notice=nyse_notice, tse_open=today_st["tse_open"])
 
         send_telegram(f"=== Briefing ===\n{analysis}")
         send_to_webapp(analysis)
